@@ -3,9 +3,6 @@ import { useEffect, useState, useRef } from "react";
 import socket from "../socket/socket";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import "leaflet.markercluster";
-import "leaflet.markercluster/dist/MarkerCluster.css";
-import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 
 // 🚍 Bus Icon
 const createBusIcon = (busId) =>
@@ -22,17 +19,15 @@ const createBusIcon = (busId) =>
     iconAnchor: [30, 70],
   });
 
-// 🔥 Cluster Layer
-function ClusterLayer({ buses }) {
+// 🔥 NORMAL MARKER LAYER (NO CLUSTER)
+function MarkerLayer({ buses }) {
   const map = useMap();
-  const clusterRef = useRef(null);
+  const markersRef = useRef([]);
 
   useEffect(() => {
-    if (clusterRef.current) {
-      map.removeLayer(clusterRef.current);
-    }
-
-    const markers = L.markerClusterGroup();
+    // clear old markers
+    markersRef.current.forEach((m) => map.removeLayer(m));
+    markersRef.current = [];
 
     Object.values(buses).forEach((bus) => {
       if (!bus.position) return;
@@ -41,7 +36,7 @@ function ClusterLayer({ buses }) {
         icon: createBusIcon(bus.busId),
       });
 
-      // 🎯 PREMIUM POPUP UI
+      // 🎯 POPUP UI (UNCHANGED)
       const popupContent = `
         <div style="min-width:190px">
 
@@ -56,71 +51,23 @@ function ClusterLayer({ buses }) {
 
           <br/><br/>
 
-          <!-- 👥 PEOPLE -->
-          <div style="
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            margin-bottom:10px;
-          ">
-            <span style="font-size:14px;color:#cbd5f5">
-              👥 People
-            </span>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <span style="font-size:14px;color:#cbd5f5">👥 People</span>
 
-            <div style="
-              display:flex;
-              align-items:center;
-              gap:10px;
-            ">
-              <button id="minus-${bus.busId}"
-                style="
-                  width:30px;
-                  height:30px;
-                  border-radius:50%;
-                  border:none;
-                  background:#1e293b;
-                  color:white;
-                  font-size:18px;
-                  cursor:pointer;
-                ">−</button>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <button id="minus-${bus.busId}" style="width:30px;height:30px;border-radius:50%;border:none;background:#1e293b;color:white;font-size:18px;cursor:pointer;">−</button>
 
-              <span id="count-${bus.busId}" style="font-weight:600">
-                1
-              </span>
+              <span id="count-${bus.busId}" style="font-weight:600">1</span>
 
-              <button id="plus-${bus.busId}"
-                style="
-                  width:30px;
-                  height:30px;
-                  border-radius:50%;
-                  border:none;
-                  background:#2563eb;
-                  color:white;
-                  font-size:18px;
-                  cursor:pointer;
-                ">+</button>
+              <button id="plus-${bus.busId}" style="width:30px;height:30px;border-radius:50%;border:none;background:#2563eb;color:white;font-size:18px;cursor:pointer;">+</button>
             </div>
           </div>
 
-          <!-- 💰 TOTAL -->
-          <p id="amount-${bus.busId}" 
-             style="margin:8px 0;font-weight:700;font-size:15px">
+          <p id="amount-${bus.busId}" style="margin:8px 0;font-weight:700;font-size:15px">
              Total: ₹20
           </p>
 
-          <!-- 💳 PAY -->
-          <button id="pay-btn-${bus.busId}"
-            style="
-              width:100%;
-              background:linear-gradient(135deg,#3b82f6,#1d4ed8);
-              color:white;
-              border:none;
-              padding:12px;
-              border-radius:12px;
-              cursor:pointer;
-              font-weight:600;
-              box-shadow:0 6px 16px rgba(59,130,246,0.5);
-            ">
+          <button id="pay-btn-${bus.busId}" style="width:100%;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:white;border:none;padding:12px;border-radius:12px;cursor:pointer;font-weight:600;">
             💳 Pay Now
           </button>
 
@@ -129,7 +76,6 @@ function ClusterLayer({ buses }) {
 
       marker.bindPopup(popupContent);
 
-      // 🔥 LOGIC AFTER POPUP OPEN
       marker.on("popupopen", () => {
         const minus = document.getElementById(`minus-${bus.busId}`);
         const plus = document.getElementById(`plus-${bus.busId}`);
@@ -161,7 +107,6 @@ function ClusterLayer({ buses }) {
 
           const upiUrl = `upi://pay?pa=vitbus@okaxis&pn=VIT%20Shuttle&am=${total}&cu=INR`;
 
-          // 🔥 Try GPay
           const intentUrl = `intent://${upiUrl.replace(
             "upi://",
             ""
@@ -169,21 +114,18 @@ function ClusterLayer({ buses }) {
 
           window.location.href = intentUrl;
 
-          // fallback
           setTimeout(() => {
             window.location.href = upiUrl;
           }, 1000);
         };
       });
 
-      markers.addLayer(marker);
+      marker.addTo(map);
+      markersRef.current.push(marker);
     });
 
-    map.addLayer(markers);
-    clusterRef.current = markers;
-
     return () => {
-      map.removeLayer(markers);
+      markersRef.current.forEach((m) => map.removeLayer(m));
     };
   }, [buses, map]);
 
@@ -193,12 +135,8 @@ function ClusterLayer({ buses }) {
 // 🗺️ MAIN MAP
 export default function MapView() {
   const [buses, setBuses] = useState({});
-  const prevPositions = useRef({});
 
   useEffect(() => {
-    setBuses({});
-    prevPositions.current = {};
-
     socket.on("location-update", (data) => {
       const { busId, latitude, longitude } = data;
 
@@ -213,7 +151,6 @@ export default function MapView() {
 
     socket.on("clear-map", () => {
       setBuses({});
-      prevPositions.current = {};
     });
 
     return () => {
@@ -228,10 +165,8 @@ export default function MapView() {
       zoom={15}
       style={{ height: "100vh", width: "100%" }}
     >
-      {/* 🌌 DARK BLUE MAP */}
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-
-      <ClusterLayer buses={buses} />
+      <MarkerLayer buses={buses} />
     </MapContainer>
   );
 }
